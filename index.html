@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Paper Revisit</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Research memory queue</p>
+          <h1>Paper Revisit</h1>
+        </div>
+        <div class="topbar-actions">
+          <label class="toggle-control">
+            <input id="avoidWeekendsToggle" type="checkbox">
+            <span>Avoid weekends</span>
+          </label>
+          <span class="sync-status" id="syncStatus">Local only</span>
+          <button class="button secondary" id="authButton" type="button">Sign in</button>
+          <button class="button secondary" id="exportDataButton" type="button">Export</button>
+          <label class="button secondary import-button">
+            Import
+            <input id="importDataInput" type="file" accept="application/json">
+          </label>
+          <button class="button primary" id="newPaperButton" type="button">New paper</button>
+        </div>
+      </header>
+
+      <main>
+        <section class="review-focus" id="dueFocus">
+          <div>
+            <p class="eyebrow">Next retrieval session</p>
+            <h2 id="focusTitle">Nothing due today</h2>
+            <p id="focusMeta">Add a paper or continue reading from the shelves below.</p>
+          </div>
+          <div class="focus-actions" id="focusActions"></div>
+        </section>
+
+        <section class="dashboard-grid">
+          <div class="panel due-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Due now</p>
+                <h2>Review queue</h2>
+              </div>
+              <span class="counter" id="dueCount">0</span>
+            </div>
+            <div class="list" id="dueList"></div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Initial reads</p>
+                <h2>Reading now</h2>
+              </div>
+              <span class="counter" id="readingCount">0</span>
+            </div>
+            <div class="list" id="readingList"></div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Unread segments</p>
+                <h2>To read shelf</h2>
+              </div>
+              <span class="counter" id="toReadCount">0</span>
+            </div>
+            <div class="list" id="toReadList"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Load-balanced</p>
+              <h2>Scheduled reviews</h2>
+            </div>
+          </div>
+          <div class="timeline" id="scheduleList"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Archive</p>
+              <h2>Paper library</h2>
+            </div>
+          </div>
+          <div class="library" id="libraryList"></div>
+        </section>
+      </main>
+    </div>
+
+    <dialog class="modal" id="paperModal">
+      <form method="dialog" class="modal-card" id="paperForm">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Add paper</p>
+            <h2>Start an initial read</h2>
+          </div>
+          <button class="icon-button" value="cancel" type="submit" aria-label="Close">x</button>
+        </div>
+
+        <label class="drop-zone" id="dropZone">
+          <input id="pdfInput" type="file" accept="application/pdf">
+          <span id="dropTitle">Drop a PDF here or choose a file</span>
+          <small id="dropMeta">The app will try to guess the title. You can edit it before adding.</small>
+        </label>
+
+        <div class="form-grid">
+          <label>
+            Title
+            <input id="paperTitleInput" type="text" placeholder="Paper title" required>
+          </label>
+          <label>
+            Authors
+            <input id="paperAuthorsInput" type="text" placeholder="Optional">
+          </label>
+          <label>
+            Start page
+            <input id="startPageInput" type="number" min="1" value="1">
+          </label>
+          <label>
+            Last page
+            <input id="endPageInput" type="text" placeholder="end or page number">
+          </label>
+        </div>
+
+        <div class="modal-actions">
+          <button class="button secondary" value="cancel" type="submit">Cancel</button>
+          <button class="button primary" id="addPaperSubmit" value="default" type="submit">Add to reading</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="modal wide" id="readModal">
+      <form method="dialog" class="modal-card" id="readForm">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Initial read</p>
+            <h2 id="readModalTitle">Paper</h2>
+            <p id="readModalMeta" class="muted"></p>
+          </div>
+          <button class="icon-button" value="cancel" type="submit" aria-label="Close">x</button>
+        </div>
+
+        <div class="reader-layout">
+          <iframe id="readPdfFrame" title="Paper PDF preview"></iframe>
+          <div class="read-controls">
+            <label>
+              Notes
+              <textarea id="readNotesInput" rows="6" placeholder="Things to remember, questions, useful details..."></textarea>
+            </label>
+            <div class="completion-box">
+              <button class="button primary full-width" id="finishFullButton" type="button">Read whole segment</button>
+              <div class="partial-row">
+                <input id="partialPageInput" type="number" min="1" placeholder="Stopped at page">
+                <button class="button secondary" id="finishPartialButton" type="button">Partially read</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="modal wide" id="reviewModal">
+      <form method="dialog" class="modal-card" id="reviewForm">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Retrieval before rereading</p>
+            <h2 id="reviewModalTitle">Review</h2>
+            <p id="reviewModalMeta" class="muted"></p>
+          </div>
+          <button class="icon-button" value="cancel" type="submit" aria-label="Close">x</button>
+        </div>
+
+        <div class="review-layout">
+          <aside class="prompt-panel">
+            <h3>Think through first</h3>
+            <ul>
+              <li>Main theorem or result</li>
+              <li>Key definitions</li>
+              <li>Proof strategy</li>
+              <li>Important lemmas</li>
+              <li>Examples or counterexamples</li>
+              <li>What still feels unclear</li>
+            </ul>
+            <button class="button secondary full-width" id="openReviewPdfButton" type="button">Open PDF after recall</button>
+          </aside>
+
+          <div class="review-main">
+            <textarea id="reviewNotesInput" rows="10" placeholder="Optional reconstruction notes before opening the PDF..."></textarea>
+            <iframe id="reviewPdfFrame" class="hidden" title="Review PDF preview"></iframe>
+            <div class="rating-row" role="group" aria-label="Review rating">
+              <button class="rating-button" data-rating="soon" type="button">
+                Again soon
+                <span>I barely reconstructed it</span>
+              </button>
+              <button class="rating-button selected" data-rating="normal" type="button">
+                Normal
+                <span>I got the main structure</span>
+              </button>
+              <button class="rating-button" data-rating="later" type="button">
+                Later
+                <span>This is solid</span>
+              </button>
+            </div>
+            <div class="review-completion">
+              <button class="button primary full-width" id="completeReviewButton" type="button">Reviewed today</button>
+              <div class="review-date-row">
+                <label>
+                  Reviewed on
+                  <input id="reviewDateInput" type="date">
+                </label>
+                <button class="button secondary" id="completeReviewOnDateButton" type="button">Use date</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </form>
+    </dialog>
+
+    <template id="emptyTemplate">
+      <div class="empty-state">Nothing here yet.</div>
+    </template>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
