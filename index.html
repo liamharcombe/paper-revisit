@@ -7,7 +7,20 @@
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
-    <div class="app-shell">
+    <section class="pin-gate" id="pinGate">
+      <form class="pin-card" id="pinForm">
+        <p class="eyebrow">Private access</p>
+        <h1>Paper Revisit</h1>
+        <label>
+          PIN
+          <input id="pinInput" type="password" inputmode="numeric" autocomplete="current-password" maxlength="4" placeholder="Enter PIN">
+        </label>
+        <p class="pin-error" id="pinError" aria-live="polite"></p>
+        <button class="button primary full-width" type="submit">Unlock</button>
+      </form>
+    </section>
+
+    <div class="app-shell locked" id="appShell">
       <header class="topbar">
         <div>
           <p class="eyebrow">Research memory queue</p>
@@ -19,7 +32,6 @@
             <span>Avoid weekends</span>
           </label>
           <span class="sync-status" id="syncStatus">Local only</span>
-          <button class="button secondary" id="authButton" type="button">Sign in</button>
           <button class="button primary" id="newPaperButton" type="button">New paper</button>
         </div>
       </header>

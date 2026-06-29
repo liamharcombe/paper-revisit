@@ -49,6 +49,40 @@ button {
   padding: 28px 0 48px;
 }
 
+.app-shell.locked {
+  display: none;
+}
+
+.pin-gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.pin-card {
+  width: min(420px, 100%);
+  display: grid;
+  gap: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  padding: 24px;
+}
+
+.pin-card h1 {
+  font-size: clamp(2rem, 10vw, 3.8rem);
+  margin-bottom: 4px;
+}
+
+.pin-error {
+  min-height: 1.25rem;
+  color: var(--red);
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+
 .topbar,
 .panel-heading,
 .modal-header,

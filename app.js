@@ -1,13 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
-  GoogleAuthProvider,
-  getAuth,
-  onAuthStateChanged,
-  signInWithPopup,
-  signInWithRedirect,
-  signOut
-} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-import {
   doc,
   getDoc,
   getFirestore,
@@ -22,6 +14,8 @@ import { firebaseConfig } from "./firebase-config.js";
   const DB_NAME = "paper-revisit-db";
   const DB_VERSION = 1;
   const SETTINGS_KEY = "paper-revisit-settings";
+  const PIN_KEY = "paper-revisit-pin-ok";
+  const APP_PIN = "2684";
   const DAY = 24 * 60 * 60 * 1000;
   const REVIEW_STEPS = [
     { label: "next day", min: 1, max: 1 },
@@ -42,9 +36,7 @@ import { firebaseConfig } from "./firebase-config.js";
     stagedPdf: null,
     adminMode: false,
     firebaseReady: false,
-    auth: null,
     firestore: null,
-    user: null,
     unsubscribeRemote: null,
     remoteLoaded: false,
     savingRemote: false,
@@ -62,6 +54,16 @@ import { firebaseConfig } from "./firebase-config.js";
 
   async function init() {
     cacheElements();
+    bindPinGate();
+    if (!isPinUnlocked()) {
+      showPinGate();
+      return;
+    }
+    unlockApp();
+    await startApp();
+  }
+
+  async function startApp() {
     bindEvents();
     state.db = await openDb();
     loadSettings();
@@ -82,10 +84,42 @@ import { firebaseConfig } from "./firebase-config.js";
       "reviewForm", "reviewModalTitle", "reviewModalMeta", "reviewPdfFrame",
       "reviewNotesInput", "openReviewPdfButton", "completeReviewButton",
       "completeReviewOnDateButton", "reviewDateInput", "emptyTemplate",
-      "avoidWeekendsToggle", "authButton", "syncStatus"
+      "avoidWeekendsToggle", "syncStatus", "pinGate", "pinForm", "pinInput",
+      "pinError", "appShell"
     ].forEach((id) => {
       els[id] = document.getElementById(id);
     });
+  }
+
+  function bindPinGate() {
+    els.pinForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (els.pinInput.value === APP_PIN) {
+        localStorage.setItem(PIN_KEY, "true");
+        els.pinError.textContent = "";
+        unlockApp();
+        startApp();
+        return;
+      }
+      els.pinInput.value = "";
+      els.pinError.textContent = "Incorrect PIN.";
+      els.pinInput.focus();
+    });
+  }
+
+  function isPinUnlocked() {
+    return localStorage.getItem(PIN_KEY) === "true";
+  }
+
+  function showPinGate() {
+    els.pinGate.classList.remove("hidden");
+    els.appShell.classList.add("locked");
+    els.pinInput.focus();
+  }
+
+  function unlockApp() {
+    els.pinGate.classList.add("hidden");
+    els.appShell.classList.remove("locked");
   }
 
   function bindEvents() {
@@ -113,7 +147,6 @@ import { firebaseConfig } from "./firebase-config.js";
       saveRemoteState();
       render();
     });
-    els.authButton.addEventListener("click", handleAuthButton);
     document.querySelectorAll(".rating-button").forEach((button) => {
       button.addEventListener("click", () => selectRating(button.dataset.rating));
     });
@@ -151,14 +184,6 @@ import { firebaseConfig } from "./firebase-config.js";
     });
   }
 
-  function clearPapers() {
-    return new Promise((resolve, reject) => {
-      const request = getStore("readwrite").clear();
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-  }
-
   function deleteLocalRecord(paperId) {
     return new Promise((resolve, reject) => {
       const request = getStore("readwrite").delete(paperId);
@@ -175,7 +200,7 @@ import { firebaseConfig } from "./firebase-config.js";
         state.localPdfs.set(record.id, record.pdfBlob);
       }
     });
-    if (!state.firebaseReady && !state.user) {
+    if (!state.firebaseReady) {
       state.papers = records
         .filter((record) => record.title)
         .map((record) => ({ ...record, hasLocalPdf: Boolean(record.pdfBlob) }))
@@ -200,27 +225,20 @@ import { firebaseConfig } from "./firebase-config.js";
       return;
     }
     const app = initializeApp(firebaseConfig);
-    state.auth = getAuth(app);
     state.firestore = getFirestore(app);
     state.firebaseReady = true;
-    state.syncStatus = "Signed out";
-    onAuthStateChanged(state.auth, async (user) => {
-      state.user = user;
-      if (state.unsubscribeRemote) {
-        state.unsubscribeRemote();
-        state.unsubscribeRemote = null;
-      }
-      if (!user) {
-        state.remoteLoaded = false;
-        state.syncStatus = "Signed out";
+    state.syncStatus = "Syncing";
+    loadRemoteState()
+      .then(() => {
+        subscribeRemoteState();
+        state.syncStatus = "Synced";
         render();
-        return;
-      }
-      state.syncStatus = `Signed in as ${user.email || user.displayName || "Google user"}`;
-      await loadRemoteState();
-      subscribeRemoteState();
-      render();
-    });
+      })
+      .catch((error) => {
+        console.error(error);
+        state.syncStatus = "Sync unavailable";
+        render();
+      });
   }
 
   function isFirebaseConfigured() {
@@ -231,29 +249,8 @@ import { firebaseConfig } from "./firebase-config.js";
       && !firebaseConfig.projectId.startsWith("YOUR_");
   }
 
-  async function handleAuthButton() {
-    if (!state.firebaseReady) {
-      window.alert("Add your Firebase project values to firebase-config.js first.");
-      return;
-    }
-    if (state.user) {
-      await signOut(state.auth);
-      return;
-    }
-    const provider = new GoogleAuthProvider();
-    try {
-      await signInWithPopup(state.auth, provider);
-    } catch (error) {
-      if (error.code === "auth/popup-blocked" || error.code === "auth/cancelled-popup-request") {
-        await signInWithRedirect(state.auth, provider);
-        return;
-      }
-      throw error;
-    }
-  }
-
   function remoteDocRef() {
-    return doc(state.firestore, "users", state.user.uid, "app", "state");
+    return doc(state.firestore, "app", "state");
   }
 
   async function loadRemoteState() {
@@ -289,7 +286,7 @@ import { firebaseConfig } from "./firebase-config.js";
   }
 
   async function saveRemoteState() {
-    if (!state.user || !state.firestore) return;
+    if (!state.firestore) return;
     state.savingRemote = true;
     try {
       await setDoc(remoteDocRef(), {
@@ -309,7 +306,7 @@ import { firebaseConfig } from "./firebase-config.js";
 
   async function savePaper(paper) {
     paper.updatedAt = new Date().toISOString();
-    if (state.user) {
+    if (state.firebaseReady) {
       await saveRemoteState();
     } else {
       await putLocalRecord({ ...paper, pdfBlob: state.localPdfs.get(paper.id) || paper.pdfBlob });
@@ -403,7 +400,7 @@ import { firebaseConfig } from "./firebase-config.js";
     await putLocalRecord({ id: paper.id, pdfBlob: state.stagedPdf });
     state.papers = [paper, ...state.papers].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     await saveRemoteState();
-    if (!state.user) {
+    if (!state.firebaseReady) {
       await putLocalRecord({ ...paper, pdfBlob: state.stagedPdf });
     }
     els.paperModal.close();
@@ -425,8 +422,6 @@ import { firebaseConfig } from "./firebase-config.js";
     els.toReadCount.textContent = toRead.length;
     document.body.classList.toggle("admin-mode", state.adminMode);
     els.avoidWeekendsToggle.checked = state.settings.avoidWeekends;
-    els.authButton.textContent = state.user ? "Sign out" : "Sign in";
-    els.authButton.title = state.syncStatus;
     els.syncStatus.textContent = state.syncStatus;
   }
 
