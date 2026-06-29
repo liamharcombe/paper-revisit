@@ -236,7 +236,7 @@ import { firebaseConfig } from "./firebase-config.js";
       })
       .catch((error) => {
         console.error(error);
-        state.syncStatus = "Local only";
+        state.syncStatus = "Sync unavailable";
         render();
       });
   }
