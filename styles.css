@@ -196,17 +196,6 @@ h3 {
   width: 100%;
 }
 
-.import-button {
-  position: relative;
-  overflow: hidden;
-}
-
-.import-button input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-}
-
 .review-focus {
   min-height: 220px;
   display: flex;

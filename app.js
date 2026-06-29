@@ -82,7 +82,7 @@ import { firebaseConfig } from "./firebase-config.js";
       "reviewForm", "reviewModalTitle", "reviewModalMeta", "reviewPdfFrame",
       "reviewNotesInput", "openReviewPdfButton", "completeReviewButton",
       "completeReviewOnDateButton", "reviewDateInput", "emptyTemplate",
-      "exportDataButton", "importDataInput", "avoidWeekendsToggle", "authButton", "syncStatus"
+      "avoidWeekendsToggle", "authButton", "syncStatus"
     ].forEach((id) => {
       els[id] = document.getElementById(id);
     });
@@ -117,8 +117,6 @@ import { firebaseConfig } from "./firebase-config.js";
     document.querySelectorAll(".rating-button").forEach((button) => {
       button.addEventListener("click", () => selectRating(button.dataset.rating));
     });
-    els.exportDataButton.addEventListener("click", exportData);
-    els.importDataInput.addEventListener("change", importData);
   }
 
   function openDb() {
@@ -885,78 +883,6 @@ import { firebaseConfig } from "./firebase-config.js";
       state.objectUrls.set(paper.id, URL.createObjectURL(blob));
     }
     return state.objectUrls.get(paper.id);
-  }
-
-  async function exportData() {
-    const payload = {
-      exportedAt: new Date().toISOString(),
-      settings: state.settings,
-      papers: await Promise.all(state.papers.map(async (paper) => ({
-        ...paper,
-        pdfBlob: state.localPdfs.has(paper.id) ? await blobToDataUrl(state.localPdfs.get(paper.id)) : null
-      })))
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `paper-revisit-${todayString()}.json`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-  }
-
-  async function importData(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    const payload = JSON.parse(await file.text());
-    if (!payload.papers || !Array.isArray(payload.papers)) return;
-    if (payload.settings) {
-      state.settings = {
-        avoidWeekends: payload.settings.avoidWeekends !== false
-      };
-      saveSettings();
-    }
-    await clearPapers();
-    state.papers = [];
-    state.localPdfs.clear();
-    for (const paper of payload.papers) {
-      const { pdfBlob, ...metadata } = paper;
-      if (pdfBlob) {
-        const blob = dataUrlToBlob(pdfBlob);
-        state.localPdfs.set(metadata.id, blob);
-        metadata.hasLocalPdf = true;
-        await putLocalRecord({ id: metadata.id, pdfBlob: blob });
-      } else {
-        metadata.hasLocalPdf = false;
-      }
-      state.papers.push(metadata);
-      if (!state.user) {
-        await putLocalRecord({ ...metadata, pdfBlob: state.localPdfs.get(metadata.id) || null });
-      }
-    }
-    state.papers.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    await saveRemoteState();
-    event.target.value = "";
-    render();
-  }
-
-  function blobToDataUrl(blob) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(blob);
-    });
-  }
-
-  function dataUrlToBlob(dataUrl) {
-    const [meta, data] = dataUrl.split(",");
-    const mime = meta.match(/data:(.*?);base64/)[1];
-    const binary = atob(data);
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) {
-      bytes[index] = binary.charCodeAt(index);
-    }
-    return new Blob([bytes], { type: mime });
   }
 
   function buttonEl(text, className, onClick) {
