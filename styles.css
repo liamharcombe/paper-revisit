@@ -143,6 +143,14 @@ button {
   text-transform: uppercase;
 }
 
+.admin-only {
+  display: none;
+}
+
+.admin-mode .admin-only {
+  display: inline-flex;
+}
+
 h1,
 h2,
 h3,
