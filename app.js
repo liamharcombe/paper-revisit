@@ -15,7 +15,7 @@ import { firebaseConfig } from "./firebase-config.js";
   const DB_VERSION = 1;
   const SETTINGS_KEY = "paper-revisit-settings";
   const PIN_KEY = "paper-revisit-pin-ok";
-  const APP_PIN = "2684";
+  const APP_PIN = "2684"; // If you made it here, please do not touch anything on this website. It is for my own personal use.
   const DAY = 24 * 60 * 60 * 1000;
   const REVIEW_STEPS = [
     { label: "next day", min: 1, max: 1 },
