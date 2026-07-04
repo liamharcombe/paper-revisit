@@ -1,0 +1,33 @@
+name: Daily due paper email
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Australia/Sydney is UTC+10 during AEST and UTC+11 during AEDT.
+    # Run at both candidate UTC times; the script only sends at 9am local time.
+    - cron: "0 22 * * *"
+    - cron: "0 23 * * *"
+
+jobs:
+  send-due-email:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Send due paper email
+        env:
+          FIREBASE_PROJECT_ID: papers-6907b
+          EMAIL_SMTP_HOST: smtp.gmail.com
+          EMAIL_SMTP_PORT: "587"
+          EMAIL_SMTP_USERNAME: t48512457@gmail.com
+          EMAIL_SMTP_PASSWORD: ${{ secrets.EMAIL_SMTP_PASSWORD }}
+          EMAIL_FROM: t48512457@gmail.com
+          EMAIL_TO: liampharcombe@gmail.com
+          TIMEZONE: Australia/Sydney
+        run: python scripts/send_due_email.py

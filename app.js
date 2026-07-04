@@ -15,7 +15,7 @@ import { firebaseConfig } from "./firebase-config.js";
   const DB_VERSION = 1;
   const SETTINGS_KEY = "paper-revisit-settings";
   const PIN_KEY = "paper-revisit-pin-ok";
-  const APP_PIN = "2684"; // If you made it here, please do not touch anything on this website. It is for my own personal use.
+  const APP_PIN_HASH = "85c7fe9319004e487cdde0f895d742b3be1b0b474708fd7162e404f32f373629";
   const DAY = 24 * 60 * 60 * 1000;
   const REVIEW_STEPS = [
     { label: "next day", min: 1, max: 1 },
@@ -92,9 +92,9 @@ import { firebaseConfig } from "./firebase-config.js";
   }
 
   function bindPinGate() {
-    els.pinForm.addEventListener("submit", (event) => {
+    els.pinForm.addEventListener("submit", async (event) => {
       event.preventDefault();
-      if (els.pinInput.value === APP_PIN) {
+      if (await sha256Hex(els.pinInput.value) === APP_PIN_HASH) {
         localStorage.setItem(PIN_KEY, "true");
         els.pinError.textContent = "";
         unlockApp();
@@ -105,6 +105,14 @@ import { firebaseConfig } from "./firebase-config.js";
       els.pinError.textContent = "Incorrect PIN.";
       els.pinInput.focus();
     });
+  }
+
+  async function sha256Hex(value) {
+    const bytes = new TextEncoder().encode(value);
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
   }
 
   function isPinUnlocked() {
