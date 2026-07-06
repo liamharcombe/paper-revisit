@@ -54,6 +54,30 @@ def fetch_state():
         return firestore_document_to_dict(json.load(response))
 
 
+def mark_email_sent(today):
+    project_id = os.environ["FIREBASE_PROJECT_ID"]
+    api_key = os.environ.get("FIREBASE_API_KEY") or FALLBACK_FIREBASE_API_KEY
+    document_path = urllib.parse.quote("(default)", safe="")
+    url = (
+        f"https://firestore.googleapis.com/v1/projects/{project_id}"
+        f"/databases/{document_path}/documents/app/state"
+        f"?key={api_key}&updateMask.fieldPaths=emailLastSentDate"
+    )
+    body = json.dumps({
+        "fields": {
+            "emailLastSentDate": {"stringValue": today}
+        }
+    }).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="PATCH",
+    )
+    with urllib.request.urlopen(request, timeout=30):
+        return
+
+
 def segment_label(paper, segment):
     end_page = segment.get("endPage") or "end"
     return f"{paper.get('title', 'Untitled paper')} p{segment.get('startPage')}-{end_page}"
@@ -124,12 +148,15 @@ def main():
     timezone = ZoneInfo(os.environ.get("TIMEZONE", "Australia/Sydney"))
     now = datetime.now(timezone)
 
-    if os.environ.get("GITHUB_EVENT_NAME") == "schedule" and now.hour != 9:
-        print(f"Skipping: local time is {now:%H:%M}, not 9am.")
-        return
-
     today = now.date().isoformat()
     state = fetch_state()
+    if state.get("emailLastSentDate") == today:
+        print(f"Skipping: reminder email already sent for {today}.")
+        return
+    if os.environ.get("GITHUB_EVENT_NAME") == "schedule" and now.hour < 9:
+        print(f"Skipping: local time is {now:%H:%M}, before 9am.")
+        return
+
     items = due_items(state, today)
     if not items:
         print(f"No due reviews for {today}.")
@@ -137,6 +164,7 @@ def main():
 
     subject = f"Paper reviews due today ({len(items)})"
     send_email(subject, format_email(items, today))
+    mark_email_sent(today)
     print(f"Sent due review email with {len(items)} item(s).")
 
 
