@@ -150,6 +150,10 @@ def main():
 
     today = now.date().isoformat()
     state = fetch_state()
+    settings = state.get("settings") or {}
+    if settings.get("emailReminders") is False:
+        print("Skipping: email reminders are disabled.")
+        return
     if state.get("emailLastSentDate") == today:
         print(f"Skipping: reminder email already sent for {today}.")
         return

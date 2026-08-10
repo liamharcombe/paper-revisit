@@ -42,7 +42,8 @@ import { firebaseConfig } from "./firebase-config.js";
     savingRemote: false,
     syncStatus: "Local only",
     settings: {
-      avoidWeekends: true
+      avoidWeekends: true,
+      emailReminders: true
     },
     localPdfs: new Map(),
     objectUrls: new Map()
@@ -84,8 +85,8 @@ import { firebaseConfig } from "./firebase-config.js";
       "reviewForm", "reviewModalTitle", "reviewModalMeta", "reviewPdfFrame",
       "reviewNotesInput", "openReviewPdfButton", "completeReviewButton",
       "completeReviewOnDateButton", "reviewDateInput", "emptyTemplate",
-      "avoidWeekendsToggle", "syncStatus", "pinGate", "pinForm", "pinInput",
-      "pinError", "appShell"
+      "avoidWeekendsToggle", "emailRemindersToggle", "syncStatus", "pinGate",
+      "pinForm", "pinInput", "pinError", "appShell"
     ].forEach((id) => {
       els[id] = document.getElementById(id);
     });
@@ -155,6 +156,12 @@ import { firebaseConfig } from "./firebase-config.js";
       saveRemoteState();
       render();
     });
+    els.emailRemindersToggle.addEventListener("change", () => {
+      state.settings.emailReminders = els.emailRemindersToggle.checked;
+      saveSettings();
+      saveRemoteState();
+      render();
+    });
     document.querySelectorAll(".rating-button").forEach((button) => {
       button.addEventListener("click", () => selectRating(button.dataset.rating));
     });
@@ -219,7 +226,8 @@ import { firebaseConfig } from "./firebase-config.js";
   function loadSettings() {
     const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
     state.settings = {
-      avoidWeekends: saved.avoidWeekends !== false
+      avoidWeekends: saved.avoidWeekends !== false,
+      emailReminders: saved.emailReminders !== false
     };
   }
 
@@ -282,7 +290,8 @@ import { firebaseConfig } from "./firebase-config.js";
   function applyRemoteState(data) {
     state.remoteLoaded = true;
     state.settings = {
-      avoidWeekends: !data.settings || data.settings.avoidWeekends !== false
+      avoidWeekends: !data.settings || data.settings.avoidWeekends !== false,
+      emailReminders: !data.settings || data.settings.emailReminders !== false
     };
     saveSettings();
     state.papers = (data.papers || [])
@@ -430,6 +439,7 @@ import { firebaseConfig } from "./firebase-config.js";
     els.toReadCount.textContent = toRead.length;
     document.body.classList.toggle("admin-mode", state.adminMode);
     els.avoidWeekendsToggle.checked = state.settings.avoidWeekends;
+    els.emailRemindersToggle.checked = state.settings.emailReminders;
     els.syncStatus.textContent = state.syncStatus;
   }
 
