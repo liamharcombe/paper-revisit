@@ -33,7 +33,6 @@ import { firebaseConfig } from "./firebase-config.js";
     selectedSegmentId: null,
     selectedReviewId: null,
     selectedRating: "normal",
-    stagedPdf: null,
     adminMode: false,
     firebaseReady: false,
     firestore: null,
@@ -44,9 +43,7 @@ import { firebaseConfig } from "./firebase-config.js";
     settings: {
       avoidWeekends: true,
       emailReminders: true
-    },
-    localPdfs: new Map(),
-    objectUrls: new Map()
+    }
   };
 
   const els = {};
@@ -68,22 +65,22 @@ import { firebaseConfig } from "./firebase-config.js";
     bindEvents();
     state.db = await openDb();
     loadSettings();
-    await loadLocalPdfs();
+    await loadLocalPapers();
     setupFirebase();
     render();
   }
 
   function cacheElements() {
     [
-      "newPaperButton", "paperModal", "paperForm", "pdfInput", "dropZone", "dropTitle",
-      "dropMeta", "paperTitleInput", "paperAuthorsInput", "startPageInput", "endPageInput",
+      "newPaperButton", "paperModal", "paperForm",
+      "paperTitleInput", "paperAuthorsInput", "startPageInput", "endPageInput",
       "dueFocus", "focusTitle", "focusMeta", "focusActions", "dueList",
       "readingList", "toReadList", "scheduleList", "libraryList", "dueCount",
       "readingCount", "toReadCount", "readModal", "readForm", "readModalTitle",
-      "readModalMeta", "readPdfFrame", "readNotesInput",
+      "readModalMeta", "readNotesInput",
       "finishFullButton", "finishPartialButton", "partialPageInput", "reviewModal",
-      "reviewForm", "reviewModalTitle", "reviewModalMeta", "reviewPdfFrame",
-      "reviewNotesInput", "openReviewPdfButton", "completeReviewButton",
+      "reviewForm", "reviewModalTitle", "reviewModalMeta",
+      "reviewNotesInput", "completeReviewButton",
       "completeReviewOnDateButton", "reviewDateInput", "emptyTemplate",
       "avoidWeekendsToggle", "emailRemindersToggle", "syncStatus", "pinGate",
       "pinForm", "pinInput", "pinError", "appShell"
@@ -134,20 +131,11 @@ import { firebaseConfig } from "./firebase-config.js";
   function bindEvents() {
     els.newPaperButton.addEventListener("click", () => openPaperModal());
     els.paperForm.addEventListener("submit", handlePaperSubmit);
-    els.pdfInput.addEventListener("change", (event) => handlePdfFile(event.target.files[0]));
-    els.dropZone.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      els.dropZone.classList.add("dragover");
-    });
-    els.dropZone.addEventListener("dragleave", () => els.dropZone.classList.remove("dragover"));
-    els.dropZone.addEventListener("drop", (event) => {
-      event.preventDefault();
-      els.dropZone.classList.remove("dragover");
-      handlePdfFile(event.dataTransfer.files[0]);
+    document.querySelectorAll(".modal-close").forEach((button) => {
+      button.addEventListener("click", () => button.closest("dialog").close());
     });
     els.finishFullButton.addEventListener("click", () => finishInitialRead(false));
     els.finishPartialButton.addEventListener("click", () => finishInitialRead(true));
-    els.openReviewPdfButton.addEventListener("click", openReviewPdf);
     els.completeReviewButton.addEventListener("click", () => completeReview(todayString()));
     els.completeReviewOnDateButton.addEventListener("click", () => completeReview(els.reviewDateInput.value));
     els.avoidWeekendsToggle.addEventListener("change", () => {
@@ -207,18 +195,11 @@ import { firebaseConfig } from "./firebase-config.js";
     });
   }
 
-  async function loadLocalPdfs() {
+  async function loadLocalPapers() {
     const records = await getAllLocalRecords();
-    state.localPdfs.clear();
-    records.forEach((record) => {
-      if (record.pdfBlob) {
-        state.localPdfs.set(record.id, record.pdfBlob);
-      }
-    });
     if (!state.firebaseReady) {
       state.papers = records
         .filter((record) => record.title)
-        .map((record) => ({ ...record, hasLocalPdf: Boolean(record.pdfBlob) }))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     }
   }
@@ -295,10 +276,6 @@ import { firebaseConfig } from "./firebase-config.js";
     };
     saveSettings();
     state.papers = (data.papers || [])
-      .map((paper) => ({
-        ...paper,
-        hasLocalPdf: state.localPdfs.has(paper.id)
-      }))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
@@ -317,7 +294,7 @@ import { firebaseConfig } from "./firebase-config.js";
   }
 
   function stripLocalFields(paper) {
-    const { pdfBlob, hasLocalPdf, ...metadata } = paper;
+    const { pdfBlob, hasLocalPdf, fileName, ...metadata } = paper;
     return metadata;
   }
 
@@ -326,57 +303,15 @@ import { firebaseConfig } from "./firebase-config.js";
     if (state.firebaseReady) {
       await saveRemoteState();
     } else {
-      await putLocalRecord({ ...paper, pdfBlob: state.localPdfs.get(paper.id) || paper.pdfBlob });
+      await putLocalRecord(paper);
     }
     render();
   }
 
   function openPaperModal() {
-    state.stagedPdf = null;
     els.paperForm.reset();
     els.startPageInput.value = "1";
-    els.dropTitle.textContent = "Drop a PDF here or choose a file";
-    els.dropMeta.textContent = "The app will try to guess the title. You can edit it before adding.";
     els.paperModal.showModal();
-  }
-
-  async function handlePdfFile(file) {
-    if (!file || file.type !== "application/pdf") return;
-    state.stagedPdf = file;
-    els.dropTitle.textContent = file.name;
-    els.dropMeta.textContent = `${formatBytes(file.size)} PDF selected`;
-    if (!els.paperTitleInput.value.trim()) {
-      const title = await guessPdfTitle(file);
-      els.paperTitleInput.value = title || cleanTitleFromFilename(file.name);
-    }
-  }
-
-  async function guessPdfTitle(file) {
-    const sample = await file.slice(0, Math.min(file.size, 2_000_000)).arrayBuffer();
-    const text = new TextDecoder("latin1").decode(sample);
-    const titleMatch = text.match(/\/Title\s*\(([^)]{3,240})\)/i);
-    if (titleMatch) return decodePdfString(titleMatch[1]);
-    const xmlMatch = text.match(/<dc:title>[\s\S]*?<rdf:li[^>]*>([\s\S]{3,240}?)<\/rdf:li>/i);
-    if (xmlMatch) return stripXml(xmlMatch[1]);
-    const altMatch = text.match(/<title>([\s\S]{3,180}?)<\/title>/i);
-    if (altMatch) return stripXml(altMatch[1]);
-    return "";
-  }
-
-  function decodePdfString(value) {
-    return value.replace(/\\([nrtbf()\\])/g, (_, char) => {
-      const map = { n: " ", r: " ", t: " ", b: "", f: "", "(": "(", ")": ")", "\\": "\\" };
-      return map[char] || char;
-    }).replace(/\s+/g, " ").trim();
-  }
-
-  function stripXml(value) {
-    const doc = new DOMParser().parseFromString(value, "text/html");
-    return doc.body.textContent.replace(/\s+/g, " ").trim();
-  }
-
-  function cleanTitleFromFilename(name) {
-    return name.replace(/\.pdf$/i, "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
   }
 
   async function handlePaperSubmit(event) {
@@ -387,18 +322,12 @@ import { firebaseConfig } from "./firebase-config.js";
       els.paperModal.close();
       return;
     }
-    if (!state.stagedPdf) {
-      els.dropMeta.textContent = "Choose a PDF before adding the paper.";
-      return;
-    }
     const startPage = Math.max(1, Number(els.startPageInput.value) || 1);
     const endPageRaw = els.endPageInput.value.trim();
     const paper = {
       id: uid(),
       title: els.paperTitleInput.value.trim(),
       authors: els.paperAuthorsInput.value.trim(),
-      fileName: state.stagedPdf.name,
-      hasLocalPdf: true,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       segments: [],
@@ -413,12 +342,10 @@ import { firebaseConfig } from "./firebase-config.js";
       initialReadAt: null,
       createdAt: new Date().toISOString()
     });
-    state.localPdfs.set(paper.id, state.stagedPdf);
-    await putLocalRecord({ id: paper.id, pdfBlob: state.stagedPdf });
     state.papers = [paper, ...state.papers].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     await saveRemoteState();
     if (!state.firebaseReady) {
-      await putLocalRecord({ ...paper, pdfBlob: state.stagedPdf });
+      await putLocalRecord(paper);
     }
     els.paperModal.close();
     render();
@@ -450,12 +377,12 @@ import { firebaseConfig } from "./firebase-config.js";
       els.focusTitle.textContent = "Nothing due today";
       els.focusMeta.textContent = next
         ? `Next scheduled: ${segmentLabel(next.paper, next.segment)} on ${formatDate(next.review.dueDate)}.`
-        : "Add a paper or continue reading from the shelves below.";
+        : "Add a paper when you start reading something new.";
       return;
     }
     const item = due[0];
     els.focusTitle.textContent = segmentLabel(item.paper, item.segment);
-    els.focusMeta.textContent = `${reviewStepLabel(item.review.step)} revisit due ${relativeDate(item.review.dueDate)}. Start by reconstructing the ideas before opening the PDF.`;
+    els.focusMeta.textContent = `${reviewStepLabel(item.review.step)} review due ${relativeDate(item.review.dueDate)}.`;
     const button = buttonEl("Start review", "button primary", () => openReview(item.paper.id, item.segment.id, item.review.id));
     els.focusActions.append(button);
   }
@@ -473,8 +400,7 @@ import { firebaseConfig } from "./firebase-config.js";
     const node = itemShell(item.review.dueDate < todayString() ? "late" : "due", relativeDate(item.review.dueDate));
     fillItem(node, segmentLabel(item.paper, item.segment), `${reviewStepLabel(item.review.step)} revisit · ${item.paper.authors || "No authors listed"}`, item.segment.notes);
     node.querySelector(".item-actions").append(
-      buttonEl("Review", "mini-button primary", () => openReview(item.paper.id, item.segment.id, item.review.id)),
-      buttonEl("PDF", "mini-button", () => openPdfTab(item.paper))
+      buttonEl("Review", "mini-button primary", () => openReview(item.paper.id, item.segment.id, item.review.id))
     );
     if (state.adminMode) {
       node.querySelector(".item-actions").append(
@@ -488,8 +414,7 @@ import { firebaseConfig } from "./firebase-config.js";
     const node = itemShell("reading", "reading");
     fillItem(node, segmentLabel(item.paper, item.segment), item.paper.authors || "Initial read in progress", item.segment.notes);
     node.querySelector(".item-actions").append(
-      buttonEl("Continue", "mini-button primary", () => openRead(item.paper.id, item.segment.id)),
-      buttonEl("PDF", "mini-button", () => openPdfTab(item.paper))
+      buttonEl("Continue", "mini-button primary", () => openRead(item.paper.id, item.segment.id))
     );
     return node;
   }
@@ -498,8 +423,7 @@ import { firebaseConfig } from "./firebase-config.js";
     const node = itemShell("", "to read");
     fillItem(node, segmentLabel(item.paper, item.segment), item.paper.authors || "Unread remainder", item.segment.notes);
     node.querySelector(".item-actions").append(
-      buttonEl("Start reading", "mini-button primary", () => startReading(item.paper.id, item.segment.id)),
-      buttonEl("PDF", "mini-button", () => openPdfTab(item.paper))
+      buttonEl("Start", "mini-button primary", () => startReading(item.paper.id, item.segment.id))
     );
     return node;
   }
@@ -572,9 +496,6 @@ import { firebaseConfig } from "./firebase-config.js";
       history.className = "history";
       history.textContent = reviewHistoryText(paper);
       node.append(history);
-      node.querySelector(".item-actions").append(
-        buttonEl("PDF", "mini-button", () => openPdfTab(paper))
-      );
       if (state.adminMode) {
         node.querySelector(".item-actions").append(
           buttonEl("Delete paper", "mini-button danger", () => deletePaper(paper.id))
@@ -586,7 +507,6 @@ import { firebaseConfig } from "./firebase-config.js";
 
   function isAdminModeRequest() {
     return els.paperTitleInput.value.trim().toLowerCase() === "admin"
-      && !state.stagedPdf
       && !els.paperAuthorsInput.value.trim()
       && (Number(els.startPageInput.value) || 1) === 1
       && !els.endPageInput.value.trim();
@@ -611,12 +531,6 @@ import { firebaseConfig } from "./firebase-config.js";
     const paper = findPaper(paperId);
     const confirmed = window.confirm(`Delete "${paper.title}" from the paper library? This removes its segments and review history too.`);
     if (!confirmed) return;
-    const url = state.objectUrls.get(paperId);
-    if (url) {
-      URL.revokeObjectURL(url);
-      state.objectUrls.delete(paperId);
-    }
-    state.localPdfs.delete(paperId);
     await deleteLocalRecord(paperId);
     state.papers = state.papers.filter((candidate) => candidate.id !== paperId);
     await saveRemoteState();
@@ -657,7 +571,6 @@ import { firebaseConfig } from "./firebase-config.js";
     els.readModalMeta.textContent = paper.authors || "";
     els.readNotesInput.value = segment.notes || "";
     els.partialPageInput.value = "";
-    setFramePdf(els.readPdfFrame, paper);
     els.readModal.showModal();
   }
 
@@ -711,15 +624,7 @@ import { firebaseConfig } from "./firebase-config.js";
     els.reviewDateInput.value = todayString();
     els.reviewDateInput.max = todayString();
     els.reviewDateInput.min = segment.initialReadAt || "";
-    els.reviewPdfFrame.classList.add("hidden");
-    els.reviewPdfFrame.removeAttribute("src");
     els.reviewModal.showModal();
-  }
-
-  function openReviewPdf() {
-    const paper = findPaper(state.selectedPaperId);
-    setFramePdf(els.reviewPdfFrame, paper);
-    els.reviewPdfFrame.classList.remove("hidden");
   }
 
   function selectRating(rating) {
@@ -871,33 +776,6 @@ import { firebaseConfig } from "./firebase-config.js";
     return REVIEW_STEPS[step] ? REVIEW_STEPS[step].label : "completed";
   }
 
-  function setFramePdf(frame, paper) {
-    const url = getObjectUrl(paper);
-    if (!url) {
-      frame.removeAttribute("src");
-      return;
-    }
-    frame.src = `${url}#page=1`;
-  }
-
-  function openPdfTab(paper) {
-    const url = getObjectUrl(paper);
-    if (!url) {
-      window.alert("This PDF is only stored locally. Upload it on this device to view it here.");
-      return;
-    }
-    window.open(url, "_blank", "noopener");
-  }
-
-  function getObjectUrl(paper) {
-    const blob = state.localPdfs.get(paper.id) || paper.pdfBlob;
-    if (!blob) return "";
-    if (!state.objectUrls.has(paper.id)) {
-      state.objectUrls.set(paper.id, URL.createObjectURL(blob));
-    }
-    return state.objectUrls.get(paper.id);
-  }
-
   function buttonEl(text, className, onClick) {
     const button = document.createElement("button");
     button.type = "button";
@@ -979,11 +857,6 @@ import { firebaseConfig } from "./firebase-config.js";
     if (diff === -1) return "yesterday";
     if (diff < 0) return `${Math.abs(diff)} days late`;
     return `in ${diff} days`;
-  }
-
-  function formatBytes(bytes) {
-    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
   function escapeHtml(value) {
