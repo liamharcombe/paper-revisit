@@ -23,7 +23,6 @@
     <div class="app-shell locked" id="appShell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">Research memory queue</p>
           <h1>Paper Revisit</h1>
         </div>
         <div class="topbar-actions">
@@ -41,55 +40,24 @@
       </header>
 
       <main>
-        <section class="review-focus" id="dueFocus">
-          <div>
-            <p class="eyebrow">Next up</p>
-            <h2 id="focusTitle">Nothing due today</h2>
-            <p id="focusMeta">Add a paper or check the collapsed sections below.</p>
-          </div>
-          <div class="focus-actions" id="focusActions"></div>
-        </section>
-
         <section class="panel due-panel">
           <div class="panel-heading">
             <div>
-              <p class="eyebrow">Today</p>
-              <h2>Due reviews</h2>
+              <h2>Today</h2>
             </div>
             <span class="counter" id="dueCount">0</span>
           </div>
           <div class="list" id="dueList"></div>
         </section>
 
-        <details class="panel details-panel">
-          <summary>
-            <span>Reading now</span>
-            <span class="counter" id="readingCount">0</span>
-          </summary>
-          <div class="list" id="readingList"></div>
-        </details>
-
-        <details class="panel details-panel">
-          <summary>
-            <span>To read</span>
-            <span class="counter" id="toReadCount">0</span>
-          </summary>
-          <div class="list" id="toReadList"></div>
-        </details>
-
-        <details class="panel details-panel">
-          <summary>
-            <span>Upcoming</span>
-          </summary>
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Upcoming</h2>
+            </div>
+          </div>
           <div class="timeline" id="scheduleList"></div>
-        </details>
-
-        <details class="panel details-panel">
-          <summary>
-            <span>Library</span>
-          </summary>
-          <div class="library" id="libraryList"></div>
-        </details>
+        </section>
       </main>
     </div>
 
@@ -98,7 +66,7 @@
         <div class="modal-header">
           <div>
             <p class="eyebrow">Add paper</p>
-            <h2>Start an initial read</h2>
+            <h2>Schedule a paper</h2>
           </div>
           <button class="icon-button modal-close" type="button" aria-label="Close">x</button>
         </div>
@@ -124,85 +92,79 @@
 
         <div class="modal-actions">
           <button class="button secondary modal-close" type="button">Cancel</button>
-          <button class="button primary" id="addPaperSubmit" value="default" type="submit">Add to reading</button>
+          <button class="button primary" id="addPaperSubmit" value="default" type="submit">Add paper</button>
         </div>
       </form>
     </dialog>
 
-    <dialog class="modal wide" id="readModal">
-      <form method="dialog" class="modal-card" id="readForm">
+    <dialog class="modal" id="editModal">
+      <form method="dialog" class="modal-card" id="editForm">
         <div class="modal-header">
           <div>
-            <p class="eyebrow">Initial read</p>
-            <h2 id="readModalTitle">Paper</h2>
-            <p id="readModalMeta" class="muted"></p>
+            <p class="eyebrow">Edit item</p>
+            <h2 id="editModalTitle">Paper</h2>
           </div>
           <button class="icon-button modal-close" type="button" aria-label="Close">x</button>
         </div>
 
-        <div class="read-controls">
+        <div class="form-grid">
           <label>
-            Notes
-            <textarea id="readNotesInput" rows="5" placeholder="Optional"></textarea>
+            Title
+            <input id="editTitleInput" type="text" required>
           </label>
-          <div class="completion-box">
-            <button class="button primary full-width" id="finishFullButton" type="button">Finished reading</button>
-            <div class="partial-row">
-              <input id="partialPageInput" type="number" min="1" placeholder="Stopped at page">
-              <button class="button secondary" id="finishPartialButton" type="button">Partially read</button>
-            </div>
+          <label>
+            Authors
+            <input id="editAuthorsInput" type="text" placeholder="Optional">
+          </label>
+          <label>
+            Start page
+            <input id="editStartPageInput" type="number" min="1">
+          </label>
+          <label>
+            Last page
+            <input id="editEndPageInput" type="text" placeholder="end or page number">
+          </label>
+          <label>
+            Next review
+            <input id="editDueDateInput" type="date" required>
+          </label>
+          <label class="full-row">
+            Notes
+            <textarea id="editNotesInput" rows="3" placeholder="Notes"></textarea>
+          </label>
+        </div>
+
+        <div class="modal-actions split-actions">
+          <button class="button danger" id="deleteItemButton" type="button">Delete</button>
+          <div class="modal-actions">
+            <button class="button secondary modal-close" type="button">Cancel</button>
+            <button class="button primary" type="submit">Save</button>
           </div>
         </div>
       </form>
     </dialog>
 
-    <dialog class="modal wide" id="reviewModal">
-      <form method="dialog" class="modal-card" id="reviewForm">
+    <dialog class="modal" id="reviewModal">
+      <form method="dialog" class="modal-card">
         <div class="modal-header">
-          <div>
-            <p class="eyebrow">Retrieval before rereading</p>
-            <h2 id="reviewModalTitle">Review</h2>
-            <p id="reviewModalMeta" class="muted"></p>
-          </div>
+          <h2 id="reviewModalTitle">Review</h2>
           <button class="icon-button modal-close" type="button" aria-label="Close">x</button>
         </div>
 
-        <div class="review-layout compact-review">
-          <aside class="prompt-panel">
-            <h3>Recall first</h3>
-            <ul>
-              <li>Main result</li>
-              <li>Key definitions</li>
-              <li>Proof idea</li>
-              <li>What is unclear</li>
-            </ul>
-          </aside>
-
-          <div class="review-main">
-            <textarea id="reviewNotesInput" rows="7" placeholder="Optional notes"></textarea>
-            <div class="rating-row" role="group" aria-label="Review rating">
-              <button class="rating-button" data-rating="soon" type="button">
-                Again soon
-                <span>I barely reconstructed it</span>
-              </button>
-              <button class="rating-button selected" data-rating="normal" type="button">
-                Normal
-                <span>I got the main structure</span>
-              </button>
-              <button class="rating-button" data-rating="later" type="button">
-                Later
-                <span>This is solid</span>
-              </button>
-            </div>
-            <div class="review-completion">
-              <button class="button primary full-width" id="completeReviewButton" type="button">Reviewed today</button>
-              <div class="review-date-row">
-                <label>
-                  Reviewed on
-                  <input id="reviewDateInput" type="date">
-                </label>
-                <button class="button secondary" id="completeReviewOnDateButton" type="button">Use date</button>
-              </div>
+        <div class="review-main">
+          <div class="rating-row" role="group" aria-label="Review rating">
+            <button class="rating-button" data-rating="soon" type="button">Again soon</button>
+            <button class="rating-button selected" data-rating="normal" type="button">Normal</button>
+            <button class="rating-button" data-rating="later" type="button">Later</button>
+          </div>
+          <div class="review-completion">
+            <button class="button primary full-width" id="completeReviewButton" type="button">Reviewed</button>
+            <div class="review-date-row">
+              <label>
+                Reviewed on
+                <input id="reviewDateInput" type="date">
+              </label>
+              <button class="button secondary" id="completeReviewOnDateButton" type="button">Use date</button>
             </div>
           </div>
         </div>

@@ -33,6 +33,9 @@ import { firebaseConfig } from "./firebase-config.js";
     selectedSegmentId: null,
     selectedReviewId: null,
     selectedRating: "normal",
+    editingPaperId: null,
+    editingSegmentId: null,
+    editingReviewId: null,
     adminMode: false,
     firebaseReady: false,
     firestore: null,
@@ -74,13 +77,10 @@ import { firebaseConfig } from "./firebase-config.js";
     [
       "newPaperButton", "paperModal", "paperForm",
       "paperTitleInput", "paperAuthorsInput", "startPageInput", "endPageInput",
-      "dueFocus", "focusTitle", "focusMeta", "focusActions", "dueList",
-      "readingList", "toReadList", "scheduleList", "libraryList", "dueCount",
-      "readingCount", "toReadCount", "readModal", "readForm", "readModalTitle",
-      "readModalMeta", "readNotesInput",
-      "finishFullButton", "finishPartialButton", "partialPageInput", "reviewModal",
-      "reviewForm", "reviewModalTitle", "reviewModalMeta",
-      "reviewNotesInput", "completeReviewButton",
+      "dueList", "scheduleList", "dueCount", "editModal", "editForm", "editModalTitle",
+      "editTitleInput", "editAuthorsInput", "editStartPageInput", "editEndPageInput",
+      "editDueDateInput", "editNotesInput", "deleteItemButton", "reviewModal",
+      "reviewModalTitle", "completeReviewButton",
       "completeReviewOnDateButton", "reviewDateInput", "emptyTemplate",
       "avoidWeekendsToggle", "emailRemindersToggle", "syncStatus", "pinGate",
       "pinForm", "pinInput", "pinError", "appShell"
@@ -131,11 +131,11 @@ import { firebaseConfig } from "./firebase-config.js";
   function bindEvents() {
     els.newPaperButton.addEventListener("click", () => openPaperModal());
     els.paperForm.addEventListener("submit", handlePaperSubmit);
+    els.editForm.addEventListener("submit", handleEditSubmit);
+    els.deleteItemButton.addEventListener("click", deleteEditedItem);
     document.querySelectorAll(".modal-close").forEach((button) => {
       button.addEventListener("click", () => button.closest("dialog").close());
     });
-    els.finishFullButton.addEventListener("click", () => finishInitialRead(false));
-    els.finishPartialButton.addEventListener("click", () => finishInitialRead(true));
     els.completeReviewButton.addEventListener("click", () => completeReview(todayString()));
     els.completeReviewOnDateButton.addEventListener("click", () => completeReview(els.reviewDateInput.value));
     els.avoidWeekendsToggle.addEventListener("change", () => {
@@ -201,6 +201,9 @@ import { firebaseConfig } from "./firebase-config.js";
       state.papers = records
         .filter((record) => record.title)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      if (scheduleLegacySegments()) {
+        await Promise.all(state.papers.map(putLocalRecord));
+      }
     }
   }
 
@@ -277,6 +280,27 @@ import { firebaseConfig } from "./firebase-config.js";
     saveSettings();
     state.papers = (data.papers || [])
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    if (scheduleLegacySegments()) {
+      saveRemoteState();
+    }
+  }
+
+  function scheduleLegacySegments() {
+    let changed = false;
+    state.papers.forEach((paper) => {
+      paper.segments.forEach((segment) => {
+        const hasOpenReview = paper.reviews.some((review) => (
+          review.segmentId === segment.id && !review.completedAt
+        ));
+        if ((segment.status === "reading" || segment.status === "to-read") && !hasOpenReview) {
+          segment.status = "scheduled";
+          segment.initialReadAt = segment.initialReadAt || todayString();
+          paper.reviews.push(createReview(paper, segment, 0, "normal", segment.initialReadAt));
+          changed = true;
+        }
+      });
+    });
+    return changed;
   }
 
   async function saveRemoteState() {
@@ -333,15 +357,17 @@ import { firebaseConfig } from "./firebase-config.js";
       segments: [],
       reviews: []
     };
-    paper.segments.push({
+    const segment = {
       id: uid(),
       startPage,
       endPage: endPageRaw || "end",
-      status: "reading",
+      status: "scheduled",
       notes: "",
-      initialReadAt: null,
+      initialReadAt: todayString(),
       createdAt: new Date().toISOString()
-    });
+    };
+    paper.segments.push(segment);
+    paper.reviews.push(createReview(paper, segment, 0, "normal", segment.initialReadAt));
     state.papers = [paper, ...state.papers].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     await saveRemoteState();
     if (!state.firebaseReady) {
@@ -353,38 +379,13 @@ import { firebaseConfig } from "./firebase-config.js";
 
   function render() {
     const due = dueReviews();
-    const reading = segmentsByStatus("reading");
-    const toRead = segmentsByStatus("to-read");
-    renderFocus(due);
     renderList(els.dueList, due, renderDueItem);
-    renderList(els.readingList, reading, renderReadingItem);
-    renderList(els.toReadList, toRead, renderToReadItem);
     renderSchedule();
-    renderLibrary();
     els.dueCount.textContent = due.length;
-    els.readingCount.textContent = reading.length;
-    els.toReadCount.textContent = toRead.length;
     document.body.classList.toggle("admin-mode", state.adminMode);
     els.avoidWeekendsToggle.checked = state.settings.avoidWeekends;
     els.emailRemindersToggle.checked = state.settings.emailReminders;
     els.syncStatus.textContent = state.syncStatus;
-  }
-
-  function renderFocus(due) {
-    els.focusActions.innerHTML = "";
-    if (!due.length) {
-      const next = allOpenReviews().sort((a, b) => a.review.dueDate.localeCompare(b.review.dueDate))[0];
-      els.focusTitle.textContent = "Nothing due today";
-      els.focusMeta.textContent = next
-        ? `Next scheduled: ${segmentLabel(next.paper, next.segment)} on ${formatDate(next.review.dueDate)}.`
-        : "Add a paper when you start reading something new.";
-      return;
-    }
-    const item = due[0];
-    els.focusTitle.textContent = segmentLabel(item.paper, item.segment);
-    els.focusMeta.textContent = `${reviewStepLabel(item.review.step)} review due ${relativeDate(item.review.dueDate)}.`;
-    const button = buttonEl("Start review", "button primary", () => openReview(item.paper.id, item.segment.id, item.review.id));
-    els.focusActions.append(button);
   }
 
   function renderList(container, items, renderer) {
@@ -400,30 +401,8 @@ import { firebaseConfig } from "./firebase-config.js";
     const node = itemShell(item.review.dueDate < todayString() ? "late" : "due", relativeDate(item.review.dueDate));
     fillItem(node, segmentLabel(item.paper, item.segment), `${reviewStepLabel(item.review.step)} revisit · ${item.paper.authors || "No authors listed"}`, item.segment.notes);
     node.querySelector(".item-actions").append(
-      buttonEl("Review", "mini-button primary", () => openReview(item.paper.id, item.segment.id, item.review.id))
-    );
-    if (state.adminMode) {
-      node.querySelector(".item-actions").append(
-        buttonEl("Delete review", "mini-button danger", () => deleteReview(item.paper.id, item.review.id))
-      );
-    }
-    return node;
-  }
-
-  function renderReadingItem(item) {
-    const node = itemShell("reading", "reading");
-    fillItem(node, segmentLabel(item.paper, item.segment), item.paper.authors || "Initial read in progress", item.segment.notes);
-    node.querySelector(".item-actions").append(
-      buttonEl("Continue", "mini-button primary", () => openRead(item.paper.id, item.segment.id))
-    );
-    return node;
-  }
-
-  function renderToReadItem(item) {
-    const node = itemShell("", "to read");
-    fillItem(node, segmentLabel(item.paper, item.segment), item.paper.authors || "Unread remainder", item.segment.notes);
-    node.querySelector(".item-actions").append(
-      buttonEl("Start", "mini-button primary", () => startReading(item.paper.id, item.segment.id))
+      buttonEl("Review", "mini-button primary", () => openReview(item.paper.id, item.segment.id, item.review.id)),
+      buttonEl("Edit", "mini-button", () => openEdit(item.paper.id, item.segment.id, item.review.id))
     );
     return node;
   }
@@ -452,14 +431,16 @@ import { firebaseConfig } from "./firebase-config.js";
   }
 
   function renderSchedule() {
-    const reviews = allOpenReviews().sort((a, b) => a.review.dueDate.localeCompare(b.review.dueDate));
+    const reviews = allOpenReviews()
+      .filter((item) => item.review.dueDate > todayString())
+      .sort((a, b) => a.review.dueDate.localeCompare(b.review.dueDate));
     els.scheduleList.innerHTML = "";
     if (!reviews.length) {
       els.scheduleList.append(emptyState());
       return;
     }
     const groups = groupBy(reviews, (item) => item.review.dueDate);
-    Object.entries(groups).slice(0, 14).forEach(([date, items]) => {
+    Object.entries(groups).forEach(([date, items]) => {
       const row = document.createElement("div");
       row.className = "timeline-day";
       const load = items.reduce((sum, item) => sum + reviewWeight(item.segment, item.review), 0);
@@ -469,39 +450,15 @@ import { firebaseConfig } from "./firebase-config.js";
       `;
       const list = row.querySelector(".list");
       items.forEach((item) => {
-        const node = itemShell(item.review.dueDate <= todayString() ? "due" : "", reviewStepLabel(item.review.step));
-        fillItem(node, segmentLabel(item.paper, item.segment), relativeDate(item.review.dueDate), "");
-        if (state.adminMode) {
-          node.querySelector(".item-actions").append(
-            buttonEl("Delete review", "mini-button danger", () => deleteReview(item.paper.id, item.review.id))
-          );
-        }
+        const node = itemShell("", reviewStepLabel(item.review.step));
+        const meta = `${item.paper.authors || "No author"} · ${relativeDate(item.review.dueDate)}`;
+        fillItem(node, segmentLabel(item.paper, item.segment), meta, "");
+        node.querySelector(".item-actions").append(
+          buttonEl("Edit", "mini-button", () => openEdit(item.paper.id, item.segment.id, item.review.id))
+        );
         list.append(node);
       });
       els.scheduleList.append(row);
-    });
-  }
-
-  function renderLibrary() {
-    els.libraryList.innerHTML = "";
-    if (!state.papers.length) {
-      els.libraryList.append(emptyState());
-      return;
-    }
-    state.papers.forEach((paper) => {
-      const node = itemShell("", `${paper.reviews.filter((review) => review.completedAt).length} reviews`);
-      const segments = paper.segments.map((segment) => `${pageRange(segment)}: ${segment.status}`).join(" · ");
-      fillItem(node, paper.title, paper.authors || "No authors listed", segments);
-      const history = document.createElement("div");
-      history.className = "history";
-      history.textContent = reviewHistoryText(paper);
-      node.append(history);
-      if (state.adminMode) {
-        node.querySelector(".item-actions").append(
-          buttonEl("Delete paper", "mini-button danger", () => deletePaper(paper.id))
-        );
-      }
-      els.libraryList.append(node);
     });
   }
 
@@ -517,95 +474,59 @@ import { firebaseConfig } from "./firebase-config.js";
     render();
   }
 
-  async function deleteReview(paperId, reviewId) {
-    const paper = findPaper(paperId);
-    const review = paper.reviews.find((candidate) => candidate.id === reviewId);
-    if (!review) return;
-    const confirmed = window.confirm(`Delete this scheduled review for "${paper.title}"?`);
-    if (!confirmed) return;
-    paper.reviews = paper.reviews.filter((candidate) => candidate.id !== reviewId);
-    await savePaper(paper);
-  }
-
-  async function deletePaper(paperId) {
-    const paper = findPaper(paperId);
-    const confirmed = window.confirm(`Delete "${paper.title}" from the paper library? This removes its segments and review history too.`);
-    if (!confirmed) return;
-    await deleteLocalRecord(paperId);
-    state.papers = state.papers.filter((candidate) => candidate.id !== paperId);
-    await saveRemoteState();
-    render();
-  }
-
-  function reviewHistoryText(paper) {
-    const complete = paper.reviews.filter((review) => review.completedAt);
-    if (!complete.length) return "No completed reviews yet.";
-    return complete
-      .slice(-4)
-      .reverse()
-      .map((review) => {
-        const date = review.actualReviewDate || review.completedAt.slice(0, 10);
-        return `${formatDate(date)}: ${reviewStepLabel(review.step)} · ${review.rating}`;
-      })
-      .join(" | ");
-  }
-
   function emptyState() {
     return els.emptyTemplate.content.firstElementChild.cloneNode(true);
   }
 
-  async function startReading(paperId, segmentId) {
+  function openEdit(paperId, segmentId, reviewId) {
     const paper = findPaper(paperId);
     const segment = paper.segments.find((candidate) => candidate.id === segmentId);
-    segment.status = "reading";
+    const review = paper.reviews.find((candidate) => candidate.id === reviewId);
+    state.editingPaperId = paperId;
+    state.editingSegmentId = segmentId;
+    state.editingReviewId = reviewId;
+    els.editModalTitle.textContent = segmentLabel(paper, segment);
+    els.editTitleInput.value = paper.title;
+    els.editAuthorsInput.value = paper.authors || "";
+    els.editStartPageInput.value = segment.startPage;
+    els.editEndPageInput.value = segment.endPage || "end";
+    els.editDueDateInput.value = review.dueDate;
+    els.editNotesInput.value = segment.notes || "";
+    els.editModal.showModal();
+  }
+
+  async function handleEditSubmit(event) {
+    event.preventDefault();
+    const paper = findPaper(state.editingPaperId);
+    const segment = paper.segments.find((candidate) => candidate.id === state.editingSegmentId);
+    const review = paper.reviews.find((candidate) => candidate.id === state.editingReviewId);
+    paper.title = els.editTitleInput.value.trim();
+    paper.authors = els.editAuthorsInput.value.trim();
+    segment.startPage = Math.max(1, Number(els.editStartPageInput.value) || 1);
+    segment.endPage = els.editEndPageInput.value.trim() || "end";
+    segment.notes = els.editNotesInput.value.trim();
+    review.dueDate = els.editDueDateInput.value;
+    els.editModal.close();
     await savePaper(paper);
-    openRead(paperId, segmentId);
   }
 
-  function openRead(paperId, segmentId) {
-    const paper = findPaper(paperId);
-    const segment = paper.segments.find((candidate) => candidate.id === segmentId);
-    state.selectedPaperId = paperId;
-    state.selectedSegmentId = segmentId;
-    els.readModalTitle.textContent = segmentLabel(paper, segment);
-    els.readModalMeta.textContent = paper.authors || "";
-    els.readNotesInput.value = segment.notes || "";
-    els.partialPageInput.value = "";
-    els.readModal.showModal();
-  }
+  async function deleteEditedItem() {
+    const paper = findPaper(state.editingPaperId);
+    const segment = paper.segments.find((candidate) => candidate.id === state.editingSegmentId);
+    const label = segmentLabel(paper, segment);
+    if (!window.confirm(`Delete "${label}" and its review history?`)) return;
 
-  async function finishInitialRead(isPartial) {
-    const paper = findPaper(state.selectedPaperId);
-    const segment = paper.segments.find((candidate) => candidate.id === state.selectedSegmentId);
-    const readDate = todayString();
-    segment.notes = els.readNotesInput.value.trim();
-    segment.initialReadAt = readDate;
-    segment.status = "scheduled";
+    paper.segments = paper.segments.filter((candidate) => candidate.id !== segment.id);
+    paper.reviews = paper.reviews.filter((review) => review.segmentId !== segment.id);
+    els.editModal.close();
 
-    if (isPartial) {
-      const stoppedAt = Number(els.partialPageInput.value);
-      if (!stoppedAt || stoppedAt < Number(segment.startPage)) {
-        els.partialPageInput.focus();
-        return;
-      }
-      const originalEnd = segment.endPage || "end";
-      segment.endPage = stoppedAt;
-      const nextStart = stoppedAt + 1;
-      if (originalEnd === "end" || Number(originalEnd) >= nextStart) {
-        paper.segments.push({
-          id: uid(),
-          startPage: nextStart,
-          endPage: originalEnd,
-          status: "to-read",
-          notes: "",
-          initialReadAt: null,
-          createdAt: new Date().toISOString()
-        });
-      }
+    if (!paper.segments.length) {
+      state.papers = state.papers.filter((candidate) => candidate.id !== paper.id);
+      await deleteLocalRecord(paper.id);
+      await saveRemoteState();
+      render();
+      return;
     }
-
-    paper.reviews.push(createReview(paper, segment, 0, "normal", readDate));
-    els.readModal.close();
     await savePaper(paper);
   }
 
@@ -619,8 +540,6 @@ import { firebaseConfig } from "./firebase-config.js";
     state.selectedRating = "normal";
     selectRating("normal");
     els.reviewModalTitle.textContent = segmentLabel(paper, segment);
-    els.reviewModalMeta.textContent = `${reviewStepLabel(review.step)} revisit · due ${formatDate(review.dueDate)}`;
-    els.reviewNotesInput.value = "";
     els.reviewDateInput.value = todayString();
     els.reviewDateInput.max = todayString();
     els.reviewDateInput.min = segment.initialReadAt || "";
@@ -645,7 +564,6 @@ import { firebaseConfig } from "./firebase-config.js";
     review.completedAt = new Date().toISOString();
     review.actualReviewDate = actualReviewDate;
     review.rating = state.selectedRating;
-    review.notes = els.reviewNotesInput.value.trim();
 
     const nextStep = state.selectedRating === "soon" ? review.step : review.step + 1;
     if (nextStep < REVIEW_STEPS.length) {
@@ -752,12 +670,6 @@ import { firebaseConfig } from "./firebase-config.js";
     return allOpenReviews()
       .filter((item) => item.review.dueDate <= todayString())
       .sort((a, b) => a.review.dueDate.localeCompare(b.review.dueDate));
-  }
-
-  function segmentsByStatus(status) {
-    return state.papers.flatMap((paper) => paper.segments
-      .filter((segment) => segment.status === status)
-      .map((segment) => ({ paper, segment })));
   }
 
   function findPaper(id) {
