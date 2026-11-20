@@ -443,9 +443,8 @@ import { firebaseConfig } from "./firebase-config.js";
     Object.entries(groups).forEach(([date, items]) => {
       const row = document.createElement("div");
       row.className = "timeline-day";
-      const load = items.reduce((sum, item) => sum + reviewWeight(item.segment, item.review), 0);
       row.innerHTML = `
-        <div class="date-chip">${formatShortDate(date)}<small>load ${load}</small></div>
+        <div class="date-chip">${formatShortDate(date)}</div>
         <div class="list"></div>
       `;
       const list = row.querySelector(".list");

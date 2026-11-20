@@ -371,13 +371,6 @@ main > .panel {
   font-weight: 850;
 }
 
-.date-chip small {
-  display: block;
-  color: var(--muted);
-  font-weight: 700;
-  margin-top: 2px;
-}
-
 .empty-state {
   border: 1px dashed #49525e;
   border-radius: var(--radius);
